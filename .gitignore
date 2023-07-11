@@ -1,0 +1,8 @@
+# IDE and Language
+.vscode/
+.venv/
+
+# Env and Secrets
+credentials.json
+token.json
+.env

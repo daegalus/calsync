@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync Meeting Status to HA
+
+[Service]
+Type=oneshot
+ExecStart=/home/yulian/workspace/personal/calsync/run.sh
+
+[Install]
+WantedBy=multi-user.target
