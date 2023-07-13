@@ -38,7 +38,8 @@ def main():
         if meeting_status:
             if busy:
                 meeting_status.state.state = "In Meeting"
-                if meeting_status.state.attributes["start_time"] == "" or meeting_status.state.attributes["start_time"] == None:
+                currentStart = meeting_status.state.attributes.get("start_time", None)
+                if currentStart == "" or currentStart == None:
                     meeting_status.state.attributes["start_time"] = start
                 meeting_status.state.attributes["end_time"] = end
                 meeting_status.update_state()
@@ -102,7 +103,13 @@ def isBusy():
             print('No upcoming events found.')
             return
         
-        event = free_busy['calendars']['primary']['busy'][0]
+        eventList = free_busy['calendars']['primary']['busy']
+        if len(eventList) == 0:
+            print('No upcoming events found. List Empty')
+            return tuple(["", "", False])
+        
+        event = eventList[0]
+        print("Event: ", event)
         nowTZ = datetime.datetime.now().astimezone()
         eventStart = datetime.datetime.fromisoformat(event['start'])
         eventStartAdj = eventStart.astimezone()

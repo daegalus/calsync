@@ -6,3 +6,6 @@
 credentials.json
 token.json
 .env
+
+# Logs
+*.log
