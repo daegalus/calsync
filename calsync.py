@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from __future__ import print_function
 
 import datetime
@@ -30,26 +31,30 @@ def main():
         print("Please set HA_URL and HA_TOKEN directly or in .env")
         return
     
-    result = isBusy()
+    result = getSchedule()
     if result:
-        start, end, busy = result
+        schedule, busy = result
 
         meeting_status = hac.get_entity(entity_id="input_select.meeting_status")
         if meeting_status:
             if busy:
                 meeting_status.state.state = "In Meeting"
-                currentStart = meeting_status.state.attributes.get("start_time", None)
-                if currentStart == "" or currentStart == None:
-                    meeting_status.state.attributes["start_time"] = start
-                meeting_status.state.attributes["end_time"] = end
-                meeting_status.update_state()
             else:
                 meeting_status.state.state = "No Meeting"
+            
+            if len(schedule) > 0:
+                meeting_status.state.attributes["start_time"] = schedule[0]["start"]
+                meeting_status.state.attributes["end_time"] = schedule[0]["end"]
+                meeting_status.state.attributes["summary"] = schedule[0]["summary"]
+                meeting_status.state.attributes["schedule"] = schedule
+            else:
                 meeting_status.state.attributes["start_time"] = ""
                 meeting_status.state.attributes["end_time"] = ""
-                meeting_status.update_state()
-
-def isBusy():
+                meeting_status.state.attributes["summary"] = ""
+                meeting_status.state.attributes["schedule"] = []
+            meeting_status.update_state()
+    
+def getSchedule():
     """Shows basic usage of the Google Calendar API.
     Prints the start and name of the next 10 events on the user's calendar.
     """
@@ -77,50 +82,44 @@ def isBusy():
         # Call the Calendar API
         nowTime = datetime.datetime.utcnow()
         now = nowTime.isoformat() + 'Z'  # 'Z' indicates UTC time
-        # print('Getting the upcoming 10 events')
-        # events_result = service.events().list(calendarId='primary', timeMin=now,
-        #                                       maxResults=10, singleEvents=True,
-        #                                       orderBy='startTime').execute()
-        # events = events_result.get('items', [])
+        nowPST = datetime.datetime.now()
+        endOfWorkDayPST = nowPST.replace(hour=17, minute=0, second=0, microsecond=0)
+        endOfWorkDayUTC = endOfWorkDayPST.astimezone(datetime.timezone.utc).isoformat()
+        print('Getting the upcoming 10 events for the day')
+        events_result = service.events().list(calendarId='primary', timeMin=now,
+                                              timeMax=endOfWorkDayUTC,
+                                              maxResults=10, singleEvents=True,
+                                              orderBy='startTime').execute()
+        events = events_result.get('items', [])
 
-        # if not events:
-        #     print('No upcoming events found.')
-        #     return
-
-        # # Prints the start and name of the next 10 events
-        # for event in events:
-        #     start = event['start'].get('dateTime', event['start'].get('date'))
-        #     print(start, event['summary'])
-
-        free_busy = service.freebusy().query(body={
-            "timeMin": now,
-            "timeMax": (nowTime + datetime.timedelta(days=1)).isoformat() + 'Z',
-            "timeZone": "America/Los_Angeles",
-            "items": [{"id": "primary"}]
-        }).execute()
-
-        if not free_busy:
+        ha_events = []
+        busy = False
+        if not events:
             print('No upcoming events found.')
-            return
-        
-        eventList = free_busy['calendars']['primary']['busy']
-        if len(eventList) == 0:
-            print('No upcoming events found. List Empty')
-            return tuple(["", "", False])
-        
-        event = eventList[0]
-        print("Event: ", event)
-        nowTZ = datetime.datetime.now().astimezone()
-        eventStart = datetime.datetime.fromisoformat(event['start'])
-        eventStartAdj = eventStart.astimezone()
-        if eventStartAdj.minute != 0 or eventStartAdj.minute != 30:
-            if eventStartAdj.minute < 30:
-                eventStartAdj = eventStartAdj.replace(minute=0)
-            else:
-                eventStartAdj = eventStartAdj.replace(minute=30)
-        
-        eventEnd = datetime.datetime.fromisoformat(event['end'])
-        return tuple([eventStart.strftime("%I:%M %p"), eventEnd.strftime("%I:%M %p"), nowTZ > eventStart and nowTZ < eventEnd])
+            return [], busy
+
+        # Prints the start and name of the next 10 events within the workday.
+        for event in events:
+            attendees = event.get('attendees', [])
+            for attendee in attendees:
+                if attendee['email'] == 'yulian@unity3d.com' and attendee['responseStatus'] == 'accepted':
+                    start = event['start'].get('dateTime', event['start'].get('date'))
+                    end = event['end'].get('dateTime', event['end'].get('date'))
+                    nowTZ = nowTime.astimezone()
+                    eventStart = datetime.datetime.fromisoformat(start).astimezone()
+                    eventEnd = datetime.datetime.fromisoformat(end).astimezone()
+
+                    print(start, end, event['summary'])
+                    ha_events.append({'start': eventStart.strftime("%I:%M %p"), 'end': eventEnd.strftime("%I:%M %p"), 'summary': event['summary']})
+
+                    
+
+                    if eventStart <= nowTZ and eventEnd > nowTZ:
+                        busy = True
+
+        print("ha_events", ha_events)
+        return ha_events, busy
+
     
     except HttpError as error:
         print('An error occurred: %s' % error)
